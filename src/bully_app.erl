@@ -10,7 +10,9 @@
 
 start() ->
     lager:start(),
-    ok = application:start(bully).
+    ok = application:start(bully),
+    connect_nodes(),
+    ok.
 
 %% ===================================================================
 %% Application callbacks
@@ -22,3 +24,20 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     ok = application:stop(lager),
     ok = application:stop(leader).
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+connect_nodes() ->
+    {ok, Nodes0} = application:get_env(bully, nodes),
+    Nodes = lists:delete(node(), Nodes0),
+    lager:info("Try to connect nodes ~p", [Nodes]),
+    Results = lists:map(fun(Node) ->
+                                net_kernel:connect_node(Node)
+                        end, Nodes),
+    case lists:member(true, Results) of
+        true -> lager:info("Connected to nodes ~p", [nodes()]);
+        false -> lager:info("No connected nodes")
+    end,
+    ok.
