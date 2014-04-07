@@ -1,0 +1,6 @@
+*.beam
+.eunit
+.rebarinfo
+deps
+log
+ebin
