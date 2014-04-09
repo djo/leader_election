@@ -33,9 +33,7 @@ connect_nodes() ->
     {ok, Nodes0} = application:get_env(bully, nodes),
     Nodes = lists:delete(node(), Nodes0),
     lager:info("Try to connect nodes ~p", [Nodes]),
-    Results = lists:map(fun(Node) ->
-                                net_kernel:connect_node(Node)
-                        end, Nodes),
+    Results = lists:map(fun net_kernel:connect_node/1, Nodes),
     case lists:member(true, Results) of
         true -> lager:info("Connected to nodes ~p", [nodes()]);
         false -> lager:info("No connected nodes")

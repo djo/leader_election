@@ -14,8 +14,15 @@
          code_change/3]).
 
 -record(state, {
+        name :: atom(),
+        leader :: atom(),
         timeout :: integer()
 }).
+
+%% state names
+-define(PINGING, pinging).
+-define(PINGED, pinged).
+-define(LEADING, leading).
 
 %% ===================================================================
 %% Module API
@@ -42,27 +49,43 @@ cluster_event(Event) ->
 
 init([]) ->
     {ok, Timeout} = application:get_env(bully, timeout),
-    gen_server:cast(?MODULE, ping_nodes),
-    {ok, #state{timeout = Timeout}}.
+    Leader = '1@127.0.0.1',
+    Name = case node() of
+               Leader ->
+                   lager:info("Start leading on ~p", [node()]),
+                   ?LEADING;
+               _ ->
+                   gen_server:cast(?MODULE, ping_leader),
+                   ?PINGED
+           end,
+    {ok, #state{name = Name, leader = Leader, timeout = Timeout}}.
 
-handle_cast(ping_nodes, #state{timeout = Timeout} = State) ->
-    Nodes = lists:delete(node(), nodes()),
-    lager:info("Ping nodes ~p", [Nodes]),
-    multicast(Nodes, {ping, node()}),
-    send_after(Timeout, ping_nodes),
+handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
+    lager:info("Ping leader ~p", [State#state.leader]),
+    multicast([State#state.leader], {ping, node()}),
+    send_after(State#state.timeout * 4, ping_leader),
+    NewState = State#state{name = ?PINGING},
+    {noreply, NewState};
+
+handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
+    lager:info("Timeout: no pong from leader ~p", [State#state.leader]),
+    lager:info("Ping leader ~p", [State#state.leader]),
+    multicast([State#state.leader], {ping, node()}),
+    send_after(State#state.timeout * 4, ping_leader),
     {noreply, State};
 
-handle_cast({ping, From}, State) ->
+handle_cast({ping, From}, #state{name = Name} = State) when Name =:= ?LEADING ->
     lager:info("Ping from ~p", [From]),
     multicast([From], {pong, node()}),
     {noreply, State};
 
-handle_cast({pong, From}, State) ->
-    lager:info("Pong from ~p", [From]),
-    {noreply, State};
+handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
+    lager:info("Pong from leader ~p", [From]),
+    NewState = State#state{name = ?PINGED},
+    {noreply, NewState};
 
-handle_cast(Request, State) ->
-    lager:error("Unexpected cast ~p", [Request]),
+handle_cast(Event, #state{name = Name} = State) ->
+    lager:error("Unexpected event ~p in ~p", [Event, Name]),
     {noreply, State}.
 
 handle_info({timer, Event}, State) ->
