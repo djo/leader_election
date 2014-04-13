@@ -1,4 +1,3 @@
-
 -module(bully_sup).
 
 -behaviour(supervisor).
@@ -9,8 +8,11 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+%% State record
+-include("state.hrl").
+
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
 
 %% ===================================================================
 %% API functions
@@ -24,4 +26,7 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, [?CHILD(bully, worker)]} }.
+    {ok, Timeout} = application:get_env(bully, timeout),
+    {ok, Leader} = application:get_env(bully, leader),
+    State = #state{leader = Leader, timeout = Timeout},
+    {ok, { {one_for_one, 5, 10}, [?CHILD(bully, worker, [State])]} }.

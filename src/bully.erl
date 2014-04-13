@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, cluster_event/1]).
+-export([start_link/1, stop/0, cluster_event/1, get_state/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -13,43 +13,40 @@
          terminate/2,
          code_change/3]).
 
--record(state, {
-        name :: atom(),
-        leader :: atom(),
-        timeout :: integer()
-}).
-
-%% state names
--define(PINGING, pinging).
--define(PINGED, pinged).
--define(LEADING, leading).
+%% State record and definitions of all possible state names
+-include("state.hrl").
 
 %% ===================================================================
 %% Module API
 %% ===================================================================
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(State) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, State, []).
 
+stop() ->
+    gen_server:cast(?MODULE, stop).
+
+-spec(cluster_event(term()) -> ok).
 cluster_event({ping, From}) ->
     gen_server:cast(?MODULE, {ping, From}),
     ok;
-
 cluster_event({pong, From}) ->
     gen_server:cast(?MODULE, {pong, From}),
     ok;
-
 cluster_event(Event) ->
     lager:error("Unknown remote event ~p on node ~p", [Event, node()]),
     ok.
+
+-spec(get_state() -> term()).
+get_state() ->
+    {state, State} = gen_server:call(?MODULE, get_state),
+    State.
 
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
 
-init([]) ->
-    {ok, Timeout} = application:get_env(bully, timeout),
-    Leader = '1@127.0.0.1',
+init(#state{leader = Leader} = State) ->
     Name = case node() of
                Leader ->
                    lager:info("Start leading on ~p", [node()]),
@@ -58,7 +55,7 @@ init([]) ->
                    gen_server:cast(?MODULE, ping_leader),
                    ?PINGED
            end,
-    {ok, #state{name = Name, leader = Leader, timeout = Timeout}}.
+    {ok, State#state{name = Name}}.
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
     lager:info("Ping leader ~p", [State#state.leader]),
@@ -84,6 +81,9 @@ handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
     NewState = State#state{name = ?PINGED},
     {noreply, NewState};
 
+handle_cast(stop, State) ->
+    {stop, normal, State};
+
 handle_cast(Event, #state{name = Name} = State) ->
     lager:error("Unexpected event ~p in ~p", [Event, Name]),
     {noreply, State}.
@@ -95,6 +95,9 @@ handle_info({timer, Event}, State) ->
 handle_info(Request, State) ->
     lager:error("Unexpected info ~p", [Request]),
     {noreply, State}.
+
+handle_call(get_state, _From, State) ->
+    {reply, {state, State}, State};
 
 handle_call(Request, From, State) ->
     lager:error("Unexpected call ~p from ~p", [Request, From]),
@@ -111,7 +114,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% ===================================================================
 
 send_after(Timeout, Event) ->
-    erlang:send_after(Timeout, ?MODULE, {timer, Event}),
+    timer:send_after(Timeout, ?MODULE, {timer, Event}),
     ok.
 
 multicast(Nodes, Event) ->
