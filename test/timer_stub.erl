@@ -6,15 +6,15 @@
 
 -record(state, {
         time :: integer(),
-        pid :: pid(),
+        timer_pid :: pid(),
         message :: term()
 }).
 
 %% API
 -export([start_link/0,
-         stop/0,
-         set_timer/3,
-         trigger_timer/0]).
+         stop/1,
+         set_timer/2,
+         trigger_timer/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -29,19 +29,19 @@
 %% ===================================================================
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link(?MODULE, [], []).
 
-stop() ->
-    gen_server:cast(?MODULE, stop).
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
 
--spec(set_timer(integer(), pid(), term()) -> ok).
-set_timer(Time, Pid, Message) ->
-    gen_server:cast(?MODULE, {set_timer, Time, Pid, Message}),
+-spec(set_timer(pid(), {integer(), pid(), term()}) -> ok).
+set_timer(Pid, {Time, TimerPid, Message}) ->
+    gen_server:cast(Pid, {set_timer, Time, TimerPid, Message}),
     ok.
 
--spec(trigger_timer() -> {ok, integer(), pid(), term()}).
-trigger_timer() ->
-    gen_server:call(?MODULE, trigger_timer).
+-spec(trigger_timer(pid()) -> {ok, integer(), pid(), term()}).
+trigger_timer(Pid) ->
+    gen_server:call(Pid, trigger_timer).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -51,15 +51,15 @@ init([]) ->
     {ok, #state{message = {}}}.
 
 handle_call(trigger_timer, _From, #state{message = Message} = State) when Message =/= {} ->
-    Pid = State#state.pid,
-    Pid ! Message,
-    {reply, {ok, State#state.time, Pid, Message}, State#state{message = {}}};
+    TimerPid = State#state.timer_pid,
+    TimerPid ! Message,
+    {reply, {ok, State#state.time, TimerPid, Message}, State#state{message = {}}};
 
 handle_call(Request, From, State) ->
     erlang:error(unexpected_call, [Request, From, State]).
 
-handle_cast({set_timer, Time, Pid, NewMessage}, #state{message = Message} = State) when Message =:= {} ->
-    {noreply, State#state{time = Time, pid = Pid, message = NewMessage}};
+handle_cast({set_timer, Time, TimerPid, NewMessage}, #state{message = Message} = State) when Message =:= {} ->
+    {noreply, State#state{time = Time, timer_pid = TimerPid, message = NewMessage}};
 
 handle_cast(stop, State) ->
     {stop, normal, State};

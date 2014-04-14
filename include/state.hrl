@@ -8,3 +8,4 @@
 -define(PINGING, pinging).
 -define(PINGED, pinged).
 -define(LEADING, leading).
+-define(ELECTING, electing).
