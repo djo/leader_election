@@ -1,6 +1,7 @@
 -record(state, {
         name :: atom(),
         leader :: atom(),
+        nodes :: [atom()],
         timeout :: integer()
 }).
 

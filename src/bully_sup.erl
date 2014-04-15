@@ -28,5 +28,7 @@ start_link() ->
 init([]) ->
     {ok, Timeout} = application:get_env(bully, timeout),
     {ok, Leader} = application:get_env(bully, leader),
-    State = #state{leader = Leader, timeout = Timeout},
+    {ok, Nodes0} = application:get_env(bully, nodes),
+    Nodes = lists:delete(node(), Nodes0),
+    State = #state{leader = Leader, nodes = Nodes, timeout = Timeout},
     {ok, { {one_for_one, 5, 10}, [?CHILD(bully, worker, [State])]} }.

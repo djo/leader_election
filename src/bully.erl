@@ -71,10 +71,10 @@ handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
     lager:info("Timeout: no pong from leader ~p", [State#state.leader]),
-    case higher_identity_nodes() of
+    case higher_identity_nodes(State#state.nodes) of
         [] ->
             lager:info("Start leading on ~p", [node()]),
-            multicast(nodes(), {new_leader, node()}),
+            multicast(State#state.nodes, {new_leader, node()}),
             {noreply, State#state{name = ?LEADING, leader = node()}};
         HigherNodes ->
             lager:info("Announce election to ~p", [HigherNodes]),
@@ -93,10 +93,10 @@ handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
 
 handle_cast({announce_election, From}, State) ->
     lager:info("Election announce from ~p", [From]),
-    case higher_identity_nodes() of
+    case higher_identity_nodes(State#state.nodes) of
         [] ->
             lager:info("Start leading on ~p", [node()]),
-            multicast(nodes(), {new_leader, node()}),
+            multicast(State#state.nodes, {new_leader, node()}),
             {noreply, State#state{name = ?LEADING, leader = node()}};
         HigherNodes ->
             lager:info("Announce election to ~p", [HigherNodes]),
@@ -152,9 +152,9 @@ multicast(Nodes, Event) ->
     [rpc:cast(Node, bully, cluster_event, [Event]) || Node <- Nodes],
     ok.
 
-higher_identity_nodes() ->
+higher_identity_nodes(Nodes) ->
     SelfIdentity = node_identity(node()),
-    lists:filter(fun(N) -> node_identity(N) > SelfIdentity end, nodes()).
+    lists:filter(fun(N) -> node_identity(N) > SelfIdentity end, Nodes).
 
 node_identity(Node) ->
     {Identity, _Host} = string:to_integer(atom_to_list(Node)),
