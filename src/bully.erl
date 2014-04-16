@@ -59,6 +59,7 @@ init(#state{leader = Leader} = State) ->
     Name = case node() of
                Leader ->
                    lager:info("Start leading on ~p", [node()]),
+                   multicast(State#state.nodes, {new_leader, node()}),
                    ?LEADING;
                _ ->
                    gen_server:cast(?MODULE, ping_leader),
