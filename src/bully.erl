@@ -36,6 +36,9 @@ cluster_event({pong, From}) ->
 cluster_event({announce_election, From}) ->
     gen_server:cast(?MODULE, {announce_election, From}),
     ok;
+cluster_event({ok, From}) ->
+    gen_server:cast(?MODULE, {ok, From}),
+    ok;
 cluster_event({new_leader, Leader}) ->
     gen_server:cast(?MODULE, {new_leader, Leader}),
     ok;
@@ -71,16 +74,7 @@ handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
     lager:info("Timeout: no pong from leader ~p", [State#state.leader]),
-    case higher_identity_nodes(State#state.nodes) of
-        [] ->
-            lager:info("Start leading on ~p", [node()]),
-            multicast(State#state.nodes, {new_leader, node()}),
-            {noreply, State#state{name = ?LEADING, leader = node()}};
-        HigherNodes ->
-            lager:info("Announce election to ~p", [HigherNodes]),
-            multicast(HigherNodes, {announce_election, node()}),
-            {noreply, State#state{name = ?ELECTING}}
-    end;
+    announce_election(State);
 
 handle_cast({ping, From}, #state{name = Name} = State) when Name =:= ?LEADING ->
     lager:info("Ping from ~p", [From]),
@@ -91,18 +85,27 @@ handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
     lager:info("Pong from leader ~p", [From]),
     {noreply, State#state{name = ?PINGED}};
 
+handle_cast({announce_election, From}, #state{name = Name} = State) when Name =:= ?ANNOUNCING; Name =:= ?ELECTING ->
+    multicast([From], {ok, node()}),
+    {noreply, State};
+
 handle_cast({announce_election, From}, State) ->
     lager:info("Election announce from ~p", [From]),
-    case higher_identity_nodes(State#state.nodes) of
-        [] ->
-            lager:info("Start leading on ~p", [node()]),
-            multicast(State#state.nodes, {new_leader, node()}),
-            {noreply, State#state{name = ?LEADING, leader = node()}};
-        HigherNodes ->
-            lager:info("Announce election to ~p", [HigherNodes]),
-            multicast(HigherNodes, {announce_election, node()}),
-            {noreply, State#state{name = ?ELECTING}}
-    end;
+    multicast([From], {ok, node()}),
+    announce_election(State);
+
+handle_cast(check_announce, #state{name = Name} = State) when Name =:= ?ANNOUNCING ->
+    lager:info("Announce timeout: no one OK received"),
+    start_leading(State);
+
+handle_cast({ok, From}, #state{name = Name} = State) when Name =:= ?ANNOUNCING ->
+    lager:info("Announce approved from ~p, start electing", [From]),
+    send_after(State#state.timeout, check_electing),
+    {noreply, State#state{name = ?ELECTING}};
+
+handle_cast(check_electing, #state{name = Name} = State) when Name =:= ?ELECTING ->
+    lager:info("Electing timeout, start announcing again"),
+    announce_election(State);
 
 %TODO handle the leaders collision
 handle_cast({new_leader, Leader}, State) ->
@@ -115,8 +118,12 @@ handle_cast({new_leader, Leader}, State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
+handle_cast({Event, From}, #state{name = Name} = State) ->
+    lager:warning("Skip event ~p from ~p in state ~p", [Event, From, Name]),
+    {noreply, State};
+
 handle_cast(Event, #state{name = Name} = State) ->
-    lager:error("Unexpected event ~p in ~p", [Event, Name]),
+    lager:warning("Skip event ~p in state ~p", [Event, Name]),
     {noreply, State}.
 
 handle_info({timer, Event}, State) ->
@@ -151,6 +158,23 @@ send_after(Timeout, Event) ->
 multicast(Nodes, Event) ->
     [rpc:cast(Node, bully, cluster_event, [Event]) || Node <- Nodes],
     ok.
+
+start_leading(State) ->
+    lager:info("Start leading on ~p", [node()]),
+    multicast(State#state.nodes, {new_leader, node()}),
+    {noreply, State#state{name = ?LEADING, leader = node()}}.
+
+announce_election(State) ->
+    Nodes = State#state.nodes,
+    case higher_identity_nodes(Nodes) of
+        [] ->
+            start_leading(State);
+        HigherNodes ->
+            lager:info("Announce election to ~p", [HigherNodes]),
+            multicast(HigherNodes, {announce_election, node()}),
+            send_after(State#state.timeout, check_announce),
+            {noreply, State#state{name = ?ANNOUNCING}}
+    end.
 
 higher_identity_nodes(Nodes) ->
     SelfIdentity = node_identity(node()),

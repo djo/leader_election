@@ -58,7 +58,7 @@ handle_call(trigger_timer, _From, #state{message = Message} = State) when Messag
 handle_call(Request, From, State) ->
     erlang:error(unexpected_call, [Request, From, State]).
 
-handle_cast({set_timer, Time, TimerPid, NewMessage}, #state{message = Message} = State) when Message =:= {} ->
+handle_cast({set_timer, Time, TimerPid, NewMessage}, #state{message = Message} = State) ->
     {noreply, State#state{time = Time, timer_pid = TimerPid, message = NewMessage}};
 
 handle_cast(stop, State) ->
