@@ -72,7 +72,7 @@ handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
     lager:info("Timeout: no pong from leader ~p", [State#state.leader]),
-    announce_election(State);
+    start_announcing(State);
 
 handle_cast({ping, From}, #state{name = Name} = State) when Name =:= ?LEADING ->
     lager:info("Ping from ~p", [From]),
@@ -90,7 +90,7 @@ handle_cast({announce_election, From}, #state{name = Name} = State) when Name =:
 handle_cast({announce_election, From}, State) ->
     lager:info("Election announce from ~p", [From]),
     multicast([From], {ok, node()}),
-    announce_election(State);
+    start_announcing(State);
 
 handle_cast(check_announce, #state{name = Name} = State) when Name =:= ?ANNOUNCING ->
     lager:info("Announce timeout: no one OK received"),
@@ -103,9 +103,12 @@ handle_cast({ok, From}, #state{name = Name} = State) when Name =:= ?ANNOUNCING -
 
 handle_cast(check_electing, #state{name = Name} = State) when Name =:= ?ELECTING ->
     lager:info("Electing timeout, start announcing again"),
-    announce_election(State);
+    start_announcing(State);
 
-%TODO handle the leaders collision
+handle_cast({new_leader, Leader}, #state{name = Name} = State) when Name =:= ?LEADING ->
+    lager:warning("Collision to set a new leader ~p while ~p", [Leader, Name]),
+    announce_election(State, State#state.nodes);
+
 handle_cast({new_leader, Leader}, State) ->
     lager:info("Set new leader ~p", [Leader]),
     start_pinging(State#state{leader = Leader});
@@ -165,17 +168,18 @@ start_leading(State) ->
     multicast(State#state.nodes, {new_leader, node()}),
     {noreply, State#state{name = ?LEADING, leader = node()}}.
 
-announce_election(State) ->
+start_announcing(State) ->
     Nodes = State#state.nodes,
     case higher_identity_nodes(Nodes) of
-        [] ->
-            start_leading(State);
-        HigherNodes ->
-            lager:info("Announce election to ~p", [HigherNodes]),
-            multicast(HigherNodes, {announce_election, node()}),
-            send_after(State#state.timeout, check_announce),
-            {noreply, State#state{name = ?ANNOUNCING}}
+        [] -> start_leading(State);
+        HigherNodes -> announce_election(State, HigherNodes)
     end.
+
+announce_election(State, Nodes) ->
+    lager:info("Announce election to ~p", [Nodes]),
+    multicast(Nodes, {announce_election, node()}),
+    send_after(State#state.timeout, check_announce),
+    {noreply, State#state{name = ?ANNOUNCING}}.
 
 higher_identity_nodes(Nodes) ->
     SelfIdentity = node_identity(node()),
