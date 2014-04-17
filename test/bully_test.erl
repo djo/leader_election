@@ -57,9 +57,7 @@ check_electing_test_() ->
 
 new_leader_test_() ->
     [{"The node sets a new leader",
-      ?setup(fun set_new_leader/1, #config{node = '2@127.0.0.1'})},
-     {"The node start announcing election on the leaders collision",
-      ?setup(fun start_announcing_on_leaders_collision/1, #config{node = '1@127.0.0.1'})}].
+      ?setup(fun set_new_leader/1, #config{node = '2@127.0.0.1'})}].
 
 %% ===================================================================
 %% Actual tests
@@ -188,15 +186,6 @@ set_new_leader(_Config) ->
      ?_assertEqual('1@127.0.0.1', State0#state.leader),
      ?_assertEqual(?PINGING, State1#state.name),
      ?_assertEqual('3@127.0.0.1', State1#state.leader)].
-
-start_announcing_on_leaders_collision(_Config) ->
-    State0 = bully:get_state(),
-    bully:cluster_event({new_leader, '3@127.0.0.1'}),
-    State1 = bully:get_state(),
-    [?_assertEqual(?LEADING, State0#state.name),
-     ?_assertEqual('1@127.0.0.1', State0#state.leader),
-     ?_assertEqual(?ANNOUNCING, State1#state.name),
-     ?_assertEqual('1@127.0.0.1', State1#state.leader)].
 
 %% ===================================================================
 %% Setup functions

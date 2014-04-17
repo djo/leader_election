@@ -105,10 +105,6 @@ handle_cast(check_electing, #state{name = Name} = State) when Name =:= ?ELECTING
     lager:info("Electing timeout, start announcing again"),
     start_announcing(State);
 
-handle_cast({new_leader, Leader}, #state{name = Name} = State) when Name =:= ?LEADING ->
-    lager:warning("Collision to set a new leader ~p while ~p", [Leader, Name]),
-    announce_election(State, State#state.nodes);
-
 handle_cast({new_leader, Leader}, State) ->
     lager:info("Set new leader ~p", [Leader]),
     start_pinging(State#state{leader = Leader});
@@ -172,15 +168,14 @@ start_announcing(#state{node = Node, nodes = Nodes} = State) ->
     Identity = node_identity(Node),
     HigherIdentityNodes = lists:filter(fun(N) -> node_identity(N) > Identity end, Nodes),
     case HigherIdentityNodes of
-        [] -> start_leading(State);
-        HigherIdentityNodes -> announce_election(State, HigherIdentityNodes)
+        [] ->
+            start_leading(State);
+        HigherIdentityNodes ->
+            lager:info("Announce election to ~p", [HigherIdentityNodes]),
+            multicast(HigherIdentityNodes, {announce_election, State#state.node}),
+            send_after(State#state.timeout, check_announce),
+            {noreply, State#state{name = ?ANNOUNCING}}
     end.
-
-announce_election(State, Nodes) ->
-    lager:info("Announce election to ~p", [Nodes]),
-    multicast(Nodes, {announce_election, State#state.node}),
-    send_after(State#state.timeout, check_announce),
-    {noreply, State#state{name = ?ANNOUNCING}}.
 
 node_identity(Node) ->
     {Identity, _Host} = string:to_integer(atom_to_list(Node)),
