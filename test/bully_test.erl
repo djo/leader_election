@@ -206,13 +206,11 @@ start(#config{node = Node, leader = Leader} = Config) ->
     {ok, TimerPid} = timer_stub:start_link(),
     meck:new(timer, [unstick, passthrough]),
     meck:expect(timer, send_after, fun(Time, Pid, Msg) -> timer_stub:set_timer(TimerPid, {Time, Pid, Msg}) end),
-    net_kernel:start([Node, longnames]),
     Nodes = lists:delete(Node, Config#config.nodes),
-    bully:start_link(#state{leader = Leader, nodes = Nodes, timeout = ?TIMEOUT}),
+    bully:start_link(#state{leader = Leader, node = Node, nodes = Nodes, timeout = ?TIMEOUT}),
     Config#config{timer_pid = TimerPid, nodes = Nodes}.
 
 stop(#config{timer_pid = TimerPid}) ->
     bully:stop(),
-    net_kernel:stop(),
     meck:unload(timer),
     timer_stub:stop(TimerPid).

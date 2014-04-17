@@ -30,5 +30,5 @@ init([]) ->
     {ok, Leader} = application:get_env(bully, leader),
     {ok, Nodes0} = application:get_env(bully, nodes),
     Nodes = lists:delete(node(), Nodes0),
-    State = #state{leader = Leader, nodes = Nodes, timeout = Timeout},
+    State = #state{leader = Leader, node = node(), nodes = Nodes, timeout = Timeout},
     {ok, { {one_for_one, 5, 10}, [?CHILD(bully, worker, [State])]} }.

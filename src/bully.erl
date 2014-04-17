@@ -43,7 +43,7 @@ cluster_event({new_leader, Leader}) ->
     gen_server:cast(?MODULE, {new_leader, Leader}),
     ok;
 cluster_event(Event) ->
-    lager:error("Unknown remote event ~p on node ~p", [Event, node()]),
+    lager:error("Unknown cluster event: ~p", [Event]),
     ok.
 
 -spec(get_state() -> term()).
@@ -55,11 +55,11 @@ get_state() ->
 %% gen_server callbacks
 %% ===================================================================
 
-init(#state{leader = Leader} = State) ->
-    Name = case node() of
+init(#state{leader = Leader, node = Node} = State) ->
+    Name = case Node of
                Leader ->
-                   lager:info("Start leading on ~p", [node()]),
-                   multicast(State#state.nodes, {new_leader, node()}),
+                   lager:info("Start leading on ~p", [Node]),
+                   multicast(State#state.nodes, {new_leader, Node}),
                    ?LEADING;
                _ ->
                    gen_server:cast(?MODULE, ping_leader),
@@ -76,7 +76,7 @@ handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
 
 handle_cast({ping, From}, #state{name = Name} = State) when Name =:= ?LEADING ->
     lager:info("Ping from ~p", [From]),
-    multicast([From], {pong, node()}),
+    multicast([From], {pong, State#state.node}),
     {noreply, State};
 
 handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
@@ -84,12 +84,12 @@ handle_cast({pong, From}, #state{name = Name} = State) when Name =:= ?PINGING ->
     {noreply, State#state{name = ?PINGED}};
 
 handle_cast({announce_election, From}, #state{name = Name} = State) when Name =:= ?ANNOUNCING; Name =:= ?ELECTING ->
-    multicast([From], {ok, node()}),
+    multicast([From], {ok, State#state.node}),
     {noreply, State};
 
 handle_cast({announce_election, From}, State) ->
     lager:info("Election announce from ~p", [From]),
-    multicast([From], {ok, node()}),
+    multicast([From], {ok, State#state.node}),
     start_announcing(State);
 
 handle_cast(check_announce, #state{name = Name} = State) when Name =:= ?ANNOUNCING ->
@@ -159,31 +159,28 @@ send_after(Timeout, Event) ->
 
 start_pinging(State) ->
     lager:info("Ping leader ~p", [State#state.leader]),
-    multicast([State#state.leader], {ping, node()}),
+    multicast([State#state.leader], {ping, State#state.node}),
     send_after(State#state.timeout * 4, ping_leader),
     {noreply, State#state{name = ?PINGING}}.
 
-start_leading(State) ->
-    lager:info("Start leading on ~p", [node()]),
-    multicast(State#state.nodes, {new_leader, node()}),
-    {noreply, State#state{name = ?LEADING, leader = node()}}.
+start_leading(#state{node = Node} = State) ->
+    lager:info("Start leading on ~p", [Node]),
+    multicast(State#state.nodes, {new_leader, Node}),
+    {noreply, State#state{name = ?LEADING, leader = Node}}.
 
-start_announcing(State) ->
-    Nodes = State#state.nodes,
-    case higher_identity_nodes(Nodes) of
+start_announcing(#state{node = Node, nodes = Nodes} = State) ->
+    Identity = node_identity(Node),
+    HigherIdentityNodes = lists:filter(fun(N) -> node_identity(N) > Identity end, Nodes),
+    case HigherIdentityNodes of
         [] -> start_leading(State);
-        HigherNodes -> announce_election(State, HigherNodes)
+        HigherIdentityNodes -> announce_election(State, HigherIdentityNodes)
     end.
 
 announce_election(State, Nodes) ->
     lager:info("Announce election to ~p", [Nodes]),
-    multicast(Nodes, {announce_election, node()}),
+    multicast(Nodes, {announce_election, State#state.node}),
     send_after(State#state.timeout, check_announce),
     {noreply, State#state{name = ?ANNOUNCING}}.
-
-higher_identity_nodes(Nodes) ->
-    SelfIdentity = node_identity(node()),
-    lists:filter(fun(N) -> node_identity(N) > SelfIdentity end, Nodes).
 
 node_identity(Node) ->
     {Identity, _Host} = string:to_integer(atom_to_list(Node)),
