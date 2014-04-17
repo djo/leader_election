@@ -68,10 +68,7 @@ init(#state{leader = Leader} = State) ->
     {ok, State#state{name = Name}}.
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGED ->
-    lager:info("Ping leader ~p", [State#state.leader]),
-    multicast([State#state.leader], {ping, node()}),
-    send_after(State#state.timeout * 4, ping_leader),
-    {noreply, State#state{name = ?PINGING}};
+    start_pinging(State);
 
 handle_cast(ping_leader, #state{name = Name} = State) when Name =:= ?PINGING ->
     lager:info("Timeout: no pong from leader ~p", [State#state.leader]),
@@ -111,10 +108,7 @@ handle_cast(check_electing, #state{name = Name} = State) when Name =:= ?ELECTING
 %TODO handle the leaders collision
 handle_cast({new_leader, Leader}, State) ->
     lager:info("Set new leader ~p", [Leader]),
-    lager:info("Ping leader ~p", [Leader]),
-    multicast([Leader], {ping, node()}),
-    send_after(State#state.timeout * 4, ping_leader),
-    {noreply, State#state{name = ?PINGING, leader = Leader}};
+    start_pinging(State#state{leader = Leader});
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -152,13 +146,19 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %% ===================================================================
 
+multicast(Nodes, Event) ->
+    [rpc:cast(Node, bully, cluster_event, [Event]) || Node <- Nodes],
+    ok.
+
 send_after(Timeout, Event) ->
     timer:send_after(Timeout, ?MODULE, {timer, Event}),
     ok.
 
-multicast(Nodes, Event) ->
-    [rpc:cast(Node, bully, cluster_event, [Event]) || Node <- Nodes],
-    ok.
+start_pinging(State) ->
+    lager:info("Ping leader ~p", [State#state.leader]),
+    multicast([State#state.leader], {ping, node()}),
+    send_after(State#state.timeout * 4, ping_leader),
+    {noreply, State#state{name = ?PINGING}}.
 
 start_leading(State) ->
     lager:info("Start leading on ~p", [node()]),
