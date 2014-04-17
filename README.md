@@ -1,4 +1,5 @@
 ## Leader Election Algorithm
+[![Build Status](https://travis-ci.org/Djo/leader_election.svg)](https://travis-ci.org/Djo/leader_election)
 
 [The bully algorithm](http://en.wikipedia.org/wiki/Bully_algorithm) is one of methods in [distributed computing](http://en.wikipedia.org/wiki/Distributed_computing) for implementation of the [leader election](http://en.wikipedia.org/wiki/Leader_election) process for dynamically electing a coordinator by process ID number. The process with the highest number is selected as the coordinator.
 
