@@ -7,21 +7,17 @@
 
 To run the algorithm you need a working installation of Erlang R15BXX (or later).
 
-    ~~~ sh
     $ make get-deps
     $ make compile-all
-    ~~~
 
 ### Usage
 
 Configure `timeout` and `nodes` in the `bully.config`.
 
-    ~~~ sh
     $ ./start.sh 1@127.0.0.1
     $ ./start.sh 2@127.0.0.1
     $ ./start.sh 3@127.0.0.1
     $ ./start.sh 4@127.0.0.1
-    ~~~
 
 Then you can kill a node and see logs.
 
